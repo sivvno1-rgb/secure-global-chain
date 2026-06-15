@@ -7,8 +7,11 @@ Only the identity + audit kernel is mounted so far. Bounded contexts
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from fastapi import Depends, FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from .agents import router as agents_router
 from .config import get_settings
@@ -25,6 +28,10 @@ from .telemetry import router as telemetry_router
 from .views import router as views_router
 
 logger = logging.getLogger("sgc")
+
+# Operator frontend bundle, resolved from the package dir so it works
+# regardless of the process CWD (docker + uvicorn).
+_STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 app = FastAPI(title="Secure Global Chain API", version="0.1.0")
 install_error_handlers(app)
@@ -48,6 +55,16 @@ if get_settings().dev_auth_enabled:
         "SGC_DEV_AUTH is ENABLED — /dev/login mints local tokens and JWTs are "
         "validated with the dev secret, NOT Keycloak. Do not use in production."
     )
+
+
+# Serve the operator frontend: /static/* assets + the SPA shell at /.
+# All /api/v1/* routes above are unaffected (matched before the "/" handler).
+app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
+
+
+@app.get("/", include_in_schema=False)
+async def root() -> FileResponse:
+    return FileResponse(_STATIC_DIR / "index.html")
 
 
 @app.get("/health")
