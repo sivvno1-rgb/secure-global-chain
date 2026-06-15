@@ -20,7 +20,21 @@ _bearer = HTTPBearer(auto_error=False)
 
 @lru_cache
 def get_jwt_validator() -> JwtValidator:
-    """Process-wide validator (caches JWKS keys). Overridable in tests."""
+    """Process-wide validator (caches JWKS keys). Overridable in tests.
+
+    In DEV-ONLY auth mode it validates HS256 tokens signed with the dev secret
+    instead of Keycloak JWKS — require_role() and Principal are unchanged.
+    """
+    from ..config import get_settings
+
+    settings = get_settings()
+    if settings.dev_auth_enabled:
+        secret = settings.dev_auth_secret
+        return JwtValidator(
+            settings=settings,
+            key_resolver=lambda _token: secret,
+            algorithms=("HS256",),
+        )
     return JwtValidator()
 
 

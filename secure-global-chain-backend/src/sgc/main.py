@@ -6,9 +6,12 @@ Only the identity + audit kernel is mounted so far. Bounded contexts
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import Depends, FastAPI
 
 from .agents import router as agents_router
+from .config import get_settings
 from .devices import router as devices_router
 from .errors import install_error_handlers
 from .executive import router as executive_router
@@ -19,6 +22,8 @@ from .quality import router as quality_router
 from .research import router as research_router
 from .security import Principal, get_current_principal, require_role
 from .telemetry import router as telemetry_router
+
+logger = logging.getLogger("sgc")
 
 app = FastAPI(title="Secure Global Chain API", version="0.1.0")
 install_error_handlers(app)
@@ -31,6 +36,16 @@ app.include_router(research_router)
 app.include_router(optimization_router)
 app.include_router(agents_router)
 app.include_router(executive_router)
+
+# DEV-ONLY: mount /dev/login when dev auth is enabled (never in production).
+if get_settings().dev_auth_enabled:
+    from .devauth import router as dev_auth_router
+
+    app.include_router(dev_auth_router)
+    logger.warning(
+        "SGC_DEV_AUTH is ENABLED — /dev/login mints local tokens and JWTs are "
+        "validated with the dev secret, NOT Keycloak. Do not use in production."
+    )
 
 
 @app.get("/health")

@@ -47,6 +47,44 @@ docker compose down            # add -v to also drop the data volumes
 Exposed ports: API `8000`, Postgres `5432`, Neo4j `7474`/`7687`, Redis `6379`,
 Keycloak `8080`, Vault `8200`, Ollama `11434`.
 
+### Demo data (`make seed`)
+
+`src/sgc/seed.py` loads idempotent demo data across every context — 3 lines, 12
+batches in various states, open deviations + CAPAs, a 7-device fleet with
+firmware + a rollout, cold-chain lanes with excursions, a schedule, evidence, and
+a few agent runs. Re-running never duplicates (entities keyed by code/serial/etc.).
+
+```bash
+make migrate    # docker compose exec api alembic upgrade head
+make seed       # docker compose exec api python -m sgc.seed
+```
+
+### Explore without Keycloak (DEV auth)
+
+Set `SGC_DEV_AUTH=true` (already on in `docker-compose.yml`) to mount `GET
+/dev/login`, which mints a Keycloak-shaped **HS256** token signed with
+`SGC_DEV_AUTH_SECRET`. In this mode the API validates that token instead of
+Keycloak JWKS — **`require_role()` is unchanged**, just satisfiable locally.
+**Never enable in production** (default is off; a startup warning logs when on).
+
+```bash
+# mint a token for one or more roles
+TOKEN=$(curl -s "http://localhost:8000/dev/login?roles=qa_release&sub=quinn" | jq -r .access_token)
+
+# use it like any bearer token
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/v1/batches
+
+# ?service=true mints a non-human token (rejected by human_only routes)
+```
+
+**Explore with no Docker at all** (local SQLite):
+
+```bash
+make seed-local             # SGC_DATABASE_URL=sqlite+aiosqlite:///./demo.db, creates tables + seeds
+SGC_DATABASE_URL=sqlite+aiosqlite:///./demo.db make dev   # uvicorn with SGC_DEV_AUTH=true
+# then /dev/login + curl as above against http://localhost:8000
+```
+
 The `api`/`worker`/`beat` services share one image (`Dockerfile`) and are wired to
 the other services by name via `SGC_*` env vars (see the `x-api-env` anchor in the
 compose file). **Keycloak and Vault run in dev mode with throwaway credentials —

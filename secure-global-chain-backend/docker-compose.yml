@@ -14,6 +14,10 @@ x-api-env: &api-env
   SGC_OIDC_ISSUER: http://keycloak:8080/realms/sgc
   SGC_OIDC_JWKS_URL: http://keycloak:8080/realms/sgc/protocol/openid-connect/certs
   SGC_OIDC_AUDIENCE: secure-global-chain-api
+  # DEV-ONLY: lets you explore without Keycloak via GET /dev/login.
+  # Set SGC_DEV_AUTH=false (and supply a real secret) for anything prod-like.
+  SGC_DEV_AUTH: "true"
+  SGC_DEV_AUTH_SECRET: dev-insecure-secret-change-me-0123456789
 
 services:
   postgres:

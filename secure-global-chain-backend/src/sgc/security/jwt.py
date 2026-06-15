@@ -39,9 +39,13 @@ class JwtValidator:
         self,
         settings: Settings | None = None,
         key_resolver: SigningKeyResolver | None = None,
+        algorithms: tuple[str, ...] | None = None,
     ) -> None:
         self._settings = settings or get_settings()
         self._key_resolver = key_resolver
+        self._algorithms = (
+            list(algorithms) if algorithms else list(self._settings.oidc_algorithms)
+        )
 
     def _resolve_key(self, token: str) -> Any:
         if self._key_resolver is None:
@@ -57,7 +61,7 @@ class JwtValidator:
             claims = jwt.decode(
                 token,
                 key,
-                algorithms=list(self._settings.oidc_algorithms),
+                algorithms=self._algorithms,
                 audience=self._settings.oidc_audience,
                 issuer=self._settings.oidc_issuer,
                 options={"require": ["exp", "iss", "aud", "sub"]},

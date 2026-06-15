@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -37,6 +37,16 @@ class Settings(BaseSettings):
     oidc_algorithms: tuple[str, ...] = ("RS256",)
     # How long to cache JWKS keys (seconds).
     jwks_cache_ttl: int = Field(default=3600)
+
+    # --- DEV-ONLY auth (must be False in production) ----------------------
+    # When enabled, the API validates HS256 tokens signed with `dev_auth_secret`
+    # instead of Keycloak JWKS, and mounts GET /dev/login to mint them. This lets
+    # you explore locally without Keycloak. require_role() is unchanged.
+    dev_auth_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("SGC_DEV_AUTH", "SGC_DEV_AUTH_ENABLED"),
+    )
+    dev_auth_secret: str = Field(default="dev-insecure-secret-change-me-0123456789")
 
     # --- Infrastructure endpoints (compose service names in Docker) -------
     redis_url: str = Field(default="redis://localhost:6379/0")
