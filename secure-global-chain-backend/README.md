@@ -23,6 +23,41 @@ first — `SECURITY.md`, `DOMAIN_MODEL.md`, `API_SURFACE.md`, `ARCHITECTURE.md`)
 | **agents** — advisory mesh (proposals only) | ✅ implemented |
 | **executive** — read-models (overview/risk/portfolio) | ✅ implemented |
 
+## Run the full mesh (Docker)
+
+`docker-compose.yml` brings up the whole stack from `CLAUDE.md` step 1: `postgres`,
+`neo4j`, `redis`, `keycloak`, `vault`, `ollama`, `api`, `worker` (Celery), `beat`
+(Celery scheduler).
+
+```bash
+cd secure-global-chain-backend
+docker compose up -d --build
+
+# Wait for the API to report healthy, then:
+curl http://localhost:8000/health        # -> {"status":"ok"}
+
+# Apply the database schema (one-off, after postgres is healthy):
+docker compose exec api alembic upgrade head
+
+# Tail logs / tear down
+docker compose logs -f api
+docker compose down            # add -v to also drop the data volumes
+```
+
+Exposed ports: API `8000`, Postgres `5432`, Neo4j `7474`/`7687`, Redis `6379`,
+Keycloak `8080`, Vault `8200`, Ollama `11434`.
+
+The `api`/`worker`/`beat` services share one image (`Dockerfile`) and are wired to
+the other services by name via `SGC_*` env vars (see the `x-api-env` anchor in the
+compose file). **Keycloak and Vault run in dev mode with throwaway credentials —
+not for production.** `/health` is dependency-free, so it is reachable as soon as
+the `api` container starts (before migrations / Keycloak realm setup).
+
+> Validated here via `docker compose config` and by running the `api` command
+> (`uvicorn sgc.main:app`) directly — `/health` returns `{"status":"ok"}`. A live
+> `docker compose up` must be run in an environment with Docker Hub access (this
+> CI sandbox blocks container-registry downloads).
+
 ### Executive read-models context
 
 Read-only projections over the other centers per `ARCHITECTURE.md` §2.

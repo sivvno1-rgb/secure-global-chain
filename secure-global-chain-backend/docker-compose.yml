@@ -1,0 +1,125 @@
+# Full Secure Global Chain mesh (CLAUDE.md build order, step 1).
+#
+#   docker compose up -d --build
+#   curl http://localhost:8000/health   ->  {"status":"ok"}
+#
+# Dev-mode services (Keycloak/Vault) use throwaway credentials — never for prod.
+
+x-api-env: &api-env
+  SGC_DATABASE_URL: postgresql+asyncpg://sgc:sgc@postgres:5432/sgc
+  SGC_REDIS_URL: redis://redis:6379/0
+  SGC_NEO4J_URI: bolt://neo4j:7687
+  SGC_OLLAMA_URL: http://ollama:11434
+  SGC_VAULT_ADDR: http://vault:8200
+  SGC_OIDC_ISSUER: http://keycloak:8080/realms/sgc
+  SGC_OIDC_JWKS_URL: http://keycloak:8080/realms/sgc/protocol/openid-connect/certs
+  SGC_OIDC_AUDIENCE: secure-global-chain-api
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: sgc
+      POSTGRES_PASSWORD: sgc
+      POSTGRES_DB: sgc
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sgc"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  neo4j:
+    image: neo4j:5
+    environment:
+      NEO4J_AUTH: neo4j/sgcsgcsgc
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4jdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    command: ["start-dev"]
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    ports:
+      - "8080:8080"
+
+  vault:
+    image: hashicorp/vault:1.15
+    command: ["server", "-dev"]
+    cap_add:
+      - IPC_LOCK
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: root
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    ports:
+      - "8200:8200"
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollamadata:/root/.ollama
+
+  api:
+    build: .
+    environment:
+      <<: *api-env
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://localhost:8000/health').status==200 else sys.exit(1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  worker:
+    build: .
+    command: ["celery", "-A", "sgc.celery_app", "worker", "-l", "info"]
+    environment:
+      <<: *api-env
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  beat:
+    build: .
+    command: ["celery", "-A", "sgc.celery_app", "beat", "-l", "info"]
+    environment:
+      <<: *api-env
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  neo4jdata:
+  ollamadata:

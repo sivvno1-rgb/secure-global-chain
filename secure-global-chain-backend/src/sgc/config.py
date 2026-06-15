@@ -38,6 +38,22 @@ class Settings(BaseSettings):
     # How long to cache JWKS keys (seconds).
     jwks_cache_ttl: int = Field(default=3600)
 
+    # --- Infrastructure endpoints (compose service names in Docker) -------
+    redis_url: str = Field(default="redis://localhost:6379/0")
+    celery_broker_url: str | None = Field(default=None)
+    celery_result_backend: str | None = Field(default=None)
+    neo4j_uri: str = Field(default="bolt://localhost:7687")
+    ollama_url: str = Field(default="http://localhost:11434")
+    vault_addr: str = Field(default="http://localhost:8200")
+
+    @property
+    def broker_url(self) -> str:
+        return self.celery_broker_url or self.redis_url
+
+    @property
+    def result_backend(self) -> str:
+        return self.celery_result_backend or self.redis_url
+
 
 @lru_cache
 def get_settings() -> Settings:
