@@ -22,6 +22,7 @@ from .quality import router as quality_router
 from .research import router as research_router
 from .security import Principal, get_current_principal, require_role
 from .telemetry import router as telemetry_router
+from .views import router as views_router
 
 logger = logging.getLogger("sgc")
 
@@ -36,6 +37,7 @@ app.include_router(research_router)
 app.include_router(optimization_router)
 app.include_router(agents_router)
 app.include_router(executive_router)
+app.include_router(views_router)
 
 # DEV-ONLY: mount /dev/login when dev auth is enabled (never in production).
 if get_settings().dev_auth_enabled:
