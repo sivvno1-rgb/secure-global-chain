@@ -1,0 +1,44 @@
+"""Application settings.
+
+Secrets are intended to come from Vault at boot in production (see
+``docs/design_handoff/SECURITY.md`` §2); for local/dev they fall back to
+environment variables. No secret values are committed to the repo.
+"""
+
+from __future__ import annotations
+
+from functools import lru_cache
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="SGC_", env_file=".env", extra="ignore"
+    )
+
+    # --- Database ---------------------------------------------------------
+    # Async SQLAlchemy URL. Postgres in prod; tests override with aiosqlite.
+    database_url: str = Field(
+        default="postgresql+asyncpg://sgc:sgc@localhost:5432/sgc",
+    )
+
+    # --- Identity / Keycloak (OIDC) --------------------------------------
+    # The OIDC issuer (Keycloak realm URL). Tokens must carry this `iss`.
+    oidc_issuer: str = Field(default="https://keycloak.local/realms/sgc")
+    # JWKS endpoint used to validate token signatures (honors `kid` rotation).
+    oidc_jwks_url: str = Field(
+        default="https://keycloak.local/realms/sgc/protocol/openid-connect/certs"
+    )
+    # Expected audience claim on access tokens.
+    oidc_audience: str = Field(default="secure-global-chain-api")
+    # Allowed signing algorithms. Keycloak default is RS256.
+    oidc_algorithms: tuple[str, ...] = ("RS256",)
+    # How long to cache JWKS keys (seconds).
+    jwks_cache_ttl: int = Field(default=3600)
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

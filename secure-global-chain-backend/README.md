@@ -1,23 +1,76 @@
 # secure-global-chain-backend
 
-Backend service for the Secure Global Chain project.
+Backend service for the **Secure Global Chain** platform. Built per the design
+handoff in [`docs/design_handoff/`](../docs/design_handoff/) (read those docs
+first — `SECURITY.md`, `DOMAIN_MODEL.md`, `API_SURFACE.md`, `ARCHITECTURE.md`).
 
-## Repository
+> **Operating principle: AI assists. Humans decide.** Agents *propose*; every
+> consequential action (release, sign, provision, decide, escalate) requires a
+> human actor and is written to the audit trail.
 
-Connected to [sivvno1-rgb/secure-global-chain](https://github.com/sivvno1-rgb/secure-global-chain).
+## Status
 
-## Getting started
+| Context | State |
+|---|---|
+| **Security core** — identity + audit kernel | ✅ implemented |
+| manufacturing, quality, devices, telemetry, intelligence, research, optimization, agents, executive | ⬜ pending |
 
-```bash
-# install dependencies (once a runtime/package manager is chosen)
-# run the service
-```
+## Security core (what's here now)
 
-## Project structure
+Implements the identity + audit kernel from `SECURITY.md` §1, §4, §5:
+
+- **JWT validation against Keycloak** (`sgc/security/jwt.py`) — verifies
+  signature (RS256, JWKS `kid` rotation), `iss`, `aud`, `exp`; rejects anything
+  else. The signing-key resolver is injectable for testing.
+- **`require_role()` RBAC dependency** (`sgc/security/deps.py`) — realm-role
+  gate; `401` for missing/invalid token, `403` for insufficient role (generic
+  messages — never leaks which). `human_only=True` rejects service tokens on
+  consequential routes.
+- **Append-only, hash-chained `audit_events`** (`sgc/audit/chain.py`,
+  `sgc/models/audit.py`) — `hash = sha256(prev_hash + canonical_json(event))`,
+  plus a `users` mirror and the first Alembic migration. The migration also
+  installs a Postgres trigger blocking `UPDATE`/`DELETE` on the ledger.
+
+## Layout
 
 ```
 secure-global-chain-backend/
-├── README.md
-├── .gitignore
-└── src/
+├── pyproject.toml
+├── alembic.ini
+├── .env.example
+├── alembic/
+│   ├── env.py                 # async Alembic environment
+│   └── versions/0001_identity_audit_kernel.py
+├── src/sgc/
+│   ├── config.py              # settings (Vault in prod; env for dev)
+│   ├── db.py                  # async engine/session + cross-dialect types
+│   ├── main.py                # FastAPI app (kernel routes only so far)
+│   ├── models/                # users, audit_events
+│   ├── security/              # JWT validation, Principal, require_role
+│   └── audit/                 # hash-chain build + verify
+└── tests/                     # JWT, RBAC, audit-chain, migration
 ```
+
+## Develop
+
+```bash
+python3 -m venv .venv && . .venv/bin/activate
+pip install -e ".[dev]"
+
+# Tests (SQLite in-memory; no external services needed)
+pytest
+
+# Apply migrations to Postgres
+export SGC_DATABASE_URL=postgresql+asyncpg://sgc:sgc@localhost:5432/sgc
+alembic upgrade head
+
+# Run the API
+uvicorn sgc.main:app --reload
+```
+
+### Testing notes
+
+Tests run on `aiosqlite` so they need no live Postgres, Keycloak, or Vault. JWT
+tests generate an RSA keypair and sign tokens locally; the Alembic migration is
+validated by rendering its Postgres DDL **offline** (`alembic upgrade head --sql`).
+The migration itself targets PostgreSQL (UUID, JSONB, append-only trigger).
