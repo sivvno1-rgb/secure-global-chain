@@ -31,6 +31,13 @@ from .quality import (
     ComplianceItem,
     Deviation,
 )
+from .research import (
+    Dataset,
+    EvidencePacket,
+    EvidenceResult,
+    Hypothesis,
+    ValidationReport,
+)
 from .telemetry import (
     ColdchainLane,
     Excursion,
@@ -69,4 +76,9 @@ __all__ = [
     "ColdchainLane",
     "Shipment",
     "Excursion",
+    "Hypothesis",
+    "EvidencePacket",
+    "EvidenceResult",
+    "ValidationReport",
+    "Dataset",
 ]

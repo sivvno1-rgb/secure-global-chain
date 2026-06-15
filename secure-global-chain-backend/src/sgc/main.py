@@ -13,6 +13,7 @@ from .errors import install_error_handlers
 from .intelligence import router as intelligence_router
 from .manufacturing import router as manufacturing_router
 from .quality import router as quality_router
+from .research import router as research_router
 from .security import Principal, get_current_principal, require_role
 from .telemetry import router as telemetry_router
 
@@ -23,6 +24,7 @@ app.include_router(quality_router)
 app.include_router(devices_router)
 app.include_router(telemetry_router)
 app.include_router(intelligence_router)
+app.include_router(research_router)
 
 
 @app.get("/health")

@@ -107,6 +107,31 @@ class ShipmentState(str, Enum):
     delivered = "delivered"
 
 
+class HypothesisState(str, Enum):
+    open = "open"
+    under_review = "under_review"
+    supported = "supported"
+    refuted = "refuted"
+
+
+class EvidenceMethod(str, Enum):
+    frequentist = "frequentist"
+    bayesian = "bayesian"
+
+
+class EvidenceState(str, Enum):
+    pending = "pending"
+    running = "running"
+    complete = "complete"
+    failed = "failed"
+
+
+class ValidationReportState(str, Enum):
+    draft = "draft"
+    in_review = "in_review"
+    approved = "approved"
+
+
 def sa_enum(enum_cls: type[Enum]) -> sa.Enum:
     """Build a portable SQLAlchemy Enum that persists the enum *value* strings."""
     return sa.Enum(

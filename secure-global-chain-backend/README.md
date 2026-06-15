@@ -18,7 +18,28 @@ first — `SECURITY.md`, `DOMAIN_MODEL.md`, `API_SURFACE.md`, `ARCHITECTURE.md`)
 | **devices** — NeuroSecure fleet / firmware | ✅ implemented |
 | **telemetry** — cold chain / streams | ✅ implemented |
 | **intelligence** — Systems Map / graph | ✅ implemented |
-| research, optimization, agents, executive | ⬜ pending |
+| **research** — evidence / validation | ✅ implemented |
+| optimization, agents, executive | ⬜ pending |
+
+### Research & Evidence context
+
+Models, migration (`0006`), the API, and real evidence compute per
+`DOMAIN_MODEL.md` / `API_SURFACE.md` / `AGENTS_AND_COMPUTE.md`:
+
+- Tables: `hypotheses, evidence_packets, evidence_results, validation_reports,
+  datasets`.
+- Endpoints: `GET/POST /research/hypotheses`, `GET /research/evidence/{id}`,
+  `POST /research/evidence` (run), `GET/POST /research/validation-reports`,
+  `POST /research/validation-reports/{code}/sign`.
+- **Compute seam** (`sgc/research/compute.py`): `LocalEvidenceComputer` runs
+  **frequentist** (scipy `ttest_1samp` + t-CI) and **Bayesian** (conjugate
+  normal-normal posterior + credible interval) synchronously; reproducible
+  (pinned seed, recorded lib versions + dataset hash). **No verdict in code** —
+  the run computes statistics only; supported/refuted stays a human disposition.
+- **Human-gated, audited**: `POST /research/validation-reports/{code}/sign` —
+  `qa_release` e-signature (`X-Audit-Event-Id`).
+- Deferred: the enclave Celery `evidence` worker (no outbound network, Vault-
+  scoped data) and the PyMC Bayesian path — the seam runs synchronously for now.
 
 ### Intelligence / Systems Map context (graph)
 

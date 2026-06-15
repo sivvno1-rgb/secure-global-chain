@@ -371,6 +371,60 @@ async def telem(tmp_path, validator):
 
 
 @pytest_asyncio.fixture
+async def research(tmp_path, validator):
+    """Seeded research DB + an ASGI client. Yields ``(client, sessionmaker, refs)``."""
+    from httpx import ASGITransport, AsyncClient
+
+    import sgc.models as models
+    from sgc.db import get_session
+    from sgc.main import app
+    from sgc.models.enums import HypothesisState, ValidationReportState
+    from sgc.security.deps import get_jwt_validator
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'research.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    maker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    refs: dict = {}
+    async with maker() as s:
+        hyp = models.Hypothesis(
+            title="Yield improves with new excipient", state=HypothesisState.open,
+            domain="formulation",
+        )
+        report_in_review = models.ValidationReport(
+            code="VR-0001", scope="Process validation",
+            state=ValidationReportState.in_review,
+        )
+        report_approved = models.ValidationReport(
+            code="VR-0002", scope="Cleaning validation",
+            state=ValidationReportState.approved,
+        )
+        s.add_all([hyp, report_in_review, report_approved])
+        await s.commit()
+        refs.update(
+            hypothesis_id=hyp.id,
+            report="VR-0001",
+            approved_report="VR-0002",
+        )
+
+    async def _get_session():
+        async with maker() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = _get_session
+    app.dependency_overrides[get_jwt_validator] = lambda: validator
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        yield client, maker, refs
+
+    app.dependency_overrides.clear()
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture
 async def intel(tmp_path, validator):
     """Seeded connected graph (in Postgres) + an ASGI client.
 
