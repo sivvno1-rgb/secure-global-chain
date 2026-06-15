@@ -371,6 +371,36 @@ async def telem(tmp_path, validator):
 
 
 @pytest_asyncio.fixture
+async def optimization(tmp_path, validator):
+    """Empty DB + an ASGI client for optimization. Yields ``(client, sessionmaker)``."""
+    from httpx import ASGITransport, AsyncClient
+
+    from sgc.db import get_session
+    from sgc.main import app
+    from sgc.security.deps import get_jwt_validator
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'opt.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    maker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    async def _get_session():
+        async with maker() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = _get_session
+    app.dependency_overrides[get_jwt_validator] = lambda: validator
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        yield client, maker
+
+    app.dependency_overrides.clear()
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture
 async def research(tmp_path, validator):
     """Seeded research DB + an ASGI client. Yields ``(client, sessionmaker, refs)``."""
     from httpx import ASGITransport, AsyncClient

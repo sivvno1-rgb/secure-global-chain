@@ -31,6 +31,7 @@ from .quality import (
     ComplianceItem,
     Deviation,
 )
+from .optimization import Schedule, ScheduleSlot, Scenario
 from .research import (
     Dataset,
     EvidencePacket,
@@ -81,4 +82,7 @@ __all__ = [
     "EvidenceResult",
     "ValidationReport",
     "Dataset",
+    "Schedule",
+    "ScheduleSlot",
+    "Scenario",
 ]

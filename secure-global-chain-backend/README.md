@@ -19,7 +19,28 @@ first — `SECURITY.md`, `DOMAIN_MODEL.md`, `API_SURFACE.md`, `ARCHITECTURE.md`)
 | **telemetry** — cold chain / streams | ✅ implemented |
 | **intelligence** — Systems Map / graph | ✅ implemented |
 | **research** — evidence / validation | ✅ implemented |
-| optimization, agents, executive | ⬜ pending |
+| **optimization** — scheduling / scenario lab | ✅ implemented |
+| agents, executive | ⬜ pending |
+
+### Optimization & Scenario Lab context
+
+Models, migration (`0007`), the API, and a real OR-Tools solve per
+`DOMAIN_MODEL.md` / `API_SURFACE.md` / `AGENTS_AND_COMPUTE.md`:
+
+- Tables: `schedules, schedule_slots, scenarios`.
+- Endpoints: `POST /optimization/schedules` (solve), `GET …/schedules/{id}`,
+  `POST …/schedules/{id}/commit`, `POST /optimization/scenarios` (what-if),
+  `GET …/scenarios/{id}`.
+- **Solver seam** (`sgc/optimization/solver.py`): `CpSatScheduleSolver` runs an
+  OR-Tools **CP-SAT** single-line sequencing solve (no overlap, minimize
+  makespan), time-boxed, returning honest `solver_status`
+  (`optimal|feasible|infeasible|timeout`). Runs synchronously here; the Celery
+  `optimize` queue is the prod target (swap via `get_schedule_solver`).
+- **Advisory + human-gated**: a solve only *proposes* (`state=solved`); a person
+  commits via `POST …/schedules/{id}/commit` — `planner`, audited
+  (`X-Audit-Event-Id`). Scenarios re-solve perturbed params and persist
+  `kpi_delta`.
+- Deferred: the Celery `optimize` worker (time-boxed solves, progress over WS).
 
 ### Research & Evidence context
 

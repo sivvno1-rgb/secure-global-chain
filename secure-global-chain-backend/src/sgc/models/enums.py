@@ -132,6 +132,20 @@ class ValidationReportState(str, Enum):
     approved = "approved"
 
 
+class SolverStatus(str, Enum):
+    optimal = "optimal"
+    feasible = "feasible"
+    infeasible = "infeasible"
+    timeout = "timeout"
+
+
+class ScheduleState(str, Enum):
+    draft = "draft"
+    solved = "solved"
+    committed = "committed"
+    failed = "failed"
+
+
 def sa_enum(enum_cls: type[Enum]) -> sa.Enum:
     """Build a portable SQLAlchemy Enum that persists the enum *value* strings."""
     return sa.Enum(
