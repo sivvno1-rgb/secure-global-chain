@@ -1,20 +1,31 @@
-"""Mission Control view-model (FRONTEND_WIRING.md §4).
+"""Fully-specced view-models (FRONTEND_WIRING.md §4–6): mission, operations,
+quality.
 
-A read-only backend-for-frontend projection composed from the existing
-manufacturing / quality / telemetry / devices services. No domain logic is
-duplicated and **no audit events** are written — consequential actions still go
-through the gated routes. All field names match the §4 contract exactly.
+Read-only backend-for-frontend projections composed from the existing
+manufacturing / quality / telemetry / devices / agents services. No domain logic
+is duplicated and **no audit events** are written — consequential actions still
+go through the gated routes. All field names match the contracts exactly.
 """
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..agents import service as agents_svc
 from ..devices import service as devices_svc
 from ..manufacturing import service as mfg_svc
-from ..models.enums import BatchStatus, DeviceState, QualityState, Severity, StatusToken
-from ..models.manufacturing import Site
+from ..models.enums import (
+    AgentRunStatus,
+    BatchStatus,
+    DeviceState,
+    QualityState,
+    Severity,
+    StatusToken,
+    StreamKind,
+)
+from ..models.manufacturing import BatchStep, Site
+from ..models.telemetry import Reading, SensorStream
 from ..quality import service as quality_svc
 from ..telemetry import service as telemetry_svc
 
@@ -41,7 +52,7 @@ def _status_from_token(token: StatusToken) -> str:
     return "pass"
 
 
-async def build_mission(session: AsyncSession) -> dict:
+async def build_mission(session: AsyncSession, range_: str | None = None) -> dict:
     # --- gather (compose existing services) -------------------------------
     lines = await mfg_svc.list_lines(session)
     batches, _ = await mfg_svc.list_batches(session, page=1, limit=1000)
@@ -190,3 +201,195 @@ async def build_mission(session: AsyncSession) -> dict:
         "facilities": facilities,
         "shipments": shipments,
     }
+
+
+# ==============================================================================
+# operations (§6)
+# ==============================================================================
+
+# Device states that count as a healthy "pass" tile / a "live" device.
+_DEVICE_FAIL = (DeviceState.quarantined,)
+_DEVICE_WARN = (DeviceState.offline, DeviceState.decommissioned)
+_DEVICE_LIVE = (DeviceState.online, DeviceState.transmitting)
+# Cleanroom reading tile labels per stream kind.
+_ENV_LABEL = {
+    StreamKind.particle: "Particle",
+    StreamKind.temp: "Temperature",
+    StreamKind.biosignal: "Biosignal",
+    StreamKind.humidity: "Humidity",
+}
+_ENV_ORDER = (StreamKind.particle, StreamKind.temp, StreamKind.humidity, StreamKind.biosignal)
+
+
+def _device_tone(state: DeviceState) -> str:
+    if state in _DEVICE_FAIL:
+        return "fail"
+    if state in _DEVICE_WARN:
+        return "warn"
+    return "pass"
+
+
+def _fmt_num(value: float | None) -> str:
+    if value is None:
+        return "—"
+    if value == int(value):
+        return f"{int(value):,}"
+    return f"{value:,.2f}"
+
+
+async def build_operations(session: AsyncSession, range_: str | None = None) -> dict:
+    """OperatorHome view-model (§6): shift task queue, assigned devices,
+    cleanroom readings, active batch. Returns only the fields it can compose."""
+    out: dict = {}
+
+    # --- tasks (st: completed→done; first open→now; rest→todo) -------------
+    tasks, _ = await mfg_svc.list_tasks(session, limit=100)
+    task_rows: list[dict] = []
+    now_assigned = False
+    for t in tasks:
+        if t.status == StatusToken.pass_:
+            st = "done"
+        elif not now_assigned:
+            st = "now"
+            now_assigned = True
+        else:
+            st = "todo"
+        row = {"id": str(t.id), "t": t.title, "st": st, "kind": t.kind.value}
+        if t.due_at is not None:
+            row["due"] = t.due_at.strftime("%H:%M")
+        task_rows.append(row)
+    if task_rows:
+        out["tasks"] = task_rows
+
+    # --- assigned devices --------------------------------------------------
+    devices, _ = await devices_svc.list_devices(session, limit=100)
+    lines = {ln.id: ln for ln in await mfg_svc.list_lines(session)}
+    sites = {s.id: s for s in (await session.execute(select(Site))).scalars()}
+    device_rows: list[dict] = []
+    for dv in devices:
+        loc_parts = []
+        if dv.site_id in sites:
+            loc_parts.append(sites[dv.site_id].name)
+        if dv.line_id in lines:
+            loc_parts.append(lines[dv.line_id].name)
+        device_rows.append({
+            "id": dv.serial,
+            "loc": " · ".join(loc_parts) or "—",
+            "st": _device_tone(dv.state),
+            "live": dv.state in _DEVICE_LIVE,
+        })
+    if device_rows:
+        out["devices"] = device_rows
+
+    # --- cleanroom environment (latest reading per stream kind) ------------
+    reading_rows = (
+        await session.execute(
+            select(SensorStream, Reading)
+            .join(Reading, Reading.stream_id == SensorStream.id)
+            .order_by(Reading.ts.desc())
+        )
+    ).all()
+    latest_by_kind: dict[StreamKind, tuple[SensorStream, Reading]] = {}
+    for stream, reading in reading_rows:
+        latest_by_kind.setdefault(stream.kind, (stream, reading))
+    env_rows: list[dict] = []
+    for kind in _ENV_ORDER:
+        if kind not in latest_by_kind:
+            continue
+        stream, reading = latest_by_kind[kind]
+        ok = True
+        if stream.spec_low is not None and reading.value is not None:
+            ok = ok and reading.value >= stream.spec_low
+        if stream.spec_high is not None and reading.value is not None:
+            ok = ok and reading.value <= stream.spec_high
+        tile = {"k": _ENV_LABEL.get(kind, kind.value), "v": _fmt_num(reading.value), "ok": ok}
+        if stream.unit:
+            tile["u"] = stream.unit
+        env_rows.append(tile)
+    if env_rows:
+        out["env"] = env_rows
+
+    # --- active batch (the operator's in-process batch) --------------------
+    batches, _ = await mfg_svc.list_batches(session, page=1, limit=1000)
+    active = next((b for b in batches if b.status == BatchStatus.in_process), None)
+    if active is not None:
+        batch: dict = {"code": active.code}
+        if active.stage:
+            batch["stage"] = active.stage
+        total_steps = await session.scalar(
+            select(func.count()).select_from(BatchStep).where(BatchStep.batch_id == active.id)
+        )
+        if total_steps:
+            signed = await session.scalar(
+                select(func.count())
+                .select_from(BatchStep)
+                .where(BatchStep.batch_id == active.id, BatchStep.signed_at.isnot(None))
+            )
+            batch["completion"] = round(100 * (signed or 0) / total_steps)
+        out["batch"] = batch
+
+    return out
+
+
+# ==============================================================================
+# quality (§5)
+# ==============================================================================
+# Open CAPAs are those not yet closed out (status not "pass").
+_OPEN_CAPA = (StatusToken.warn, StatusToken.fail, StatusToken.info, StatusToken.neutral)
+
+
+def _pct_tone(pct: float, *, good: float = 95.0, bad: float = 80.0) -> str:
+    if pct >= good:
+        return "pass"
+    if pct >= bad:
+        return "warn"
+    return "fail"
+
+
+async def build_quality(session: AsyncSession, range_: str | None = None) -> dict:
+    """Quality & Compliance console (§5). Composes the tiles the quality context
+    can source today (compliance, CAPAs, audits, agent drafts); fields backed by
+    not-yet-modeled domains (change-control, periodic review, training) are
+    omitted so the screen falls back to demo for them."""
+    out: dict = {}
+
+    compliance = await quality_svc.list_compliance_items(session)
+    capas, _ = await quality_svc.list_capas(session)
+    audits = await quality_svc.list_audits(session)
+
+    # --- KPIs (only the §5 tiles with a real source, in §5 order) ----------
+    kpis: list[dict] = []
+    if compliance:
+        comp_pct = 100.0 * sum(1 for c in compliance if c.state == StatusToken.pass_) / len(compliance)
+        kpis.append({"label": "SOX on-time", "v": str(round(comp_pct)), "u": "%",
+                     "tone": _pct_tone(comp_pct)})
+    open_capas = [c for c in capas if c.status in _OPEN_CAPA]
+    if capas:
+        kpis.append({"label": "Open CAPAs", "v": str(len(open_capas)),
+                     "tone": "warn" if open_capas else "pass"})
+    readiness = [a.readiness_pct for a in audits if a.readiness_pct is not None]
+    if readiness:
+        avg_ready = sum(readiness) / len(readiness)
+        kpis.append({"label": "Audit readiness", "v": str(round(avg_ready)), "u": "%",
+                     "tone": _pct_tone(avg_ready, good=90, bad=75)})
+    if kpis:
+        out["kpis"] = kpis
+
+    # --- what the agents drafted (proposals awaiting a human) --------------
+    runs = await agents_svc.list_runs(session)
+    agent_rows: list[dict] = []
+    for r in runs:
+        if r.status != AgentRunStatus.awaiting_human:
+            continue
+        action = ""
+        if isinstance(r.proposed_action, dict):
+            action = r.proposed_action.get("summary") or r.proposed_action.get("kind") or ""
+        agent_rows.append({
+            "t": action or f"{r.agent} proposal",
+            "m": "Awaiting human disposition",
+            "act": "Review",
+        })
+    if agent_rows:
+        out["agents"] = agent_rows
+
+    return out
