@@ -22,6 +22,13 @@ first — `SECURITY.md`, `DOMAIN_MODEL.md`, `API_SURFACE.md`, `ARCHITECTURE.md`)
 | **optimization** — scheduling / scenario lab | ✅ implemented |
 | **agents** — advisory mesh (proposals only) | ✅ implemented |
 | **executive** — read-models (overview/risk/portfolio) | ✅ implemented |
+| **views** — per-screen backend-for-frontend (27 endpoints) | ✅ implemented |
+| **operator frontend** — served at `GET /` (+ `/static/*`) | ✅ implemented |
+| **decisions / reviews / economy / incident** | 🔲 specced (view routes scaffolded → `{}`) |
+
+See [`../docs/ARCHITECTURE_OVERVIEW.md`](../docs/ARCHITECTURE_OVERVIEW.md) for the
+MBSE / Operations-Research / Decision-Architecture treatment, and
+[`../docs/VIEWS_API.md`](../docs/VIEWS_API.md) for the views layer.
 
 ## Run the full mesh (Docker)
 
@@ -259,6 +266,26 @@ and `API_SURFACE.md` (exact field names / enum strings):
   - `POST /batches/{code}/quarantine` — `quality`
   - `POST /batches/{code}/steps/{id}/sign` — `operator` (e-signature)
 
+### Views (backend-for-frontend) & operator frontend
+
+A read-only **BFF** per `FRONTEND_WIRING.md` §2/§7: one role-gated view-model per
+screen, composing existing context services — **no domain logic duplicated, no
+audit events**. Full reference: [`../docs/VIEWS_API.md`](../docs/VIEWS_API.md).
+
+- Endpoint: `GET /api/v1/views/<key>` (honors `?range=`), generated from a single
+  registry (`sgc/views/registry.py`) — 27 routes total.
+- **Implemented (compose live data):** `mission`, `operations`, `quality`,
+  `ops/facility-map`, `optimization/{schedule,scenario}`, `agents`,
+  `intel/{globe,dependencies,hardware,evidence}`,
+  `research/{reports,hypotheses,evidence,lockout}`.
+- **Scaffolds (`{}` so the frontend keeps demo data):** the `new-domain` /
+  `illustrative` rows, plus `decisions`/`reviews`/`escalate`/`economy`/`intel/economy`
+  whose backing domain isn't modeled yet.
+- **Operator frontend** is served by the API: `GET /` returns
+  `src/sgc/static/index.html` and assets mount at `/static/*` (shipped inside the
+  wheel via `pyproject.toml` package-data, so `pip install .` / the Docker image
+  include it).
+
 ## Security core (what's here now)
 
 Implements the identity + audit kernel from `SECURITY.md` §1, §4, §5:
@@ -279,21 +306,32 @@ Implements the identity + audit kernel from `SECURITY.md` §1, §4, §5:
 
 ```
 secure-global-chain-backend/
-├── pyproject.toml
-├── alembic.ini
-├── .env.example
+├── pyproject.toml             # deps + setuptools (ships sgc/static via package-data)
+├── alembic.ini  Dockerfile  docker-compose.yml  Makefile  .env.example
 ├── alembic/
 │   ├── env.py                 # async Alembic environment
-│   └── versions/0001_identity_audit_kernel.py
+│   └── versions/0001…0008     # identity+audit, manufacturing, quality, devices,
+│                              #   telemetry, research, optimization, agents
 ├── src/sgc/
-│   ├── config.py              # settings (Vault in prod; env for dev)
-│   ├── db.py                  # async engine/session + cross-dialect types
-│   ├── main.py                # FastAPI app (kernel routes only so far)
-│   ├── models/                # users, audit_events
-│   ├── security/              # JWT validation, Principal, require_role
-│   └── audit/                 # hash-chain build + verify
-└── tests/                     # JWT, RBAC, audit-chain, migration
+│   ├── main.py                # FastAPI app: routers, GET /, /static mount
+│   ├── config.py  db.py  errors.py  pagination.py  codes.py  devauth.py
+│   ├── seed.py  celery_app.py
+│   ├── models/                # all SQLAlchemy models + enums
+│   ├── security/              # JWT validation, Principal, require_role, users
+│   ├── audit/                 # hash-chain build + verify
+│   ├── manufacturing/  quality/  devices/  telemetry/   # bounded contexts:
+│   ├── intelligence/  research/  optimization/  agents/  #   router/service/
+│   ├── executive/                                        #   schemas/models
+│   ├── views/                 # backend-for-frontend (registry + 27 routes)
+│   │   ├── registry.py  router.py  service.py  composed.py  schemas.py
+│   └── static/index.html      # operator frontend served at GET /
+└── tests/                     # per-context: endpoints, RBAC, audit, views, migration
 ```
+
+Each bounded context follows the same shape: `router.py` (HTTP) → `service.py`
+(domain logic) → `models/<context>.py` (SQLAlchemy) → `schemas.py` (Pydantic).
+Prod integrations (Vault PKI, Neo4j, Celery solvers, LangGraph/Ollama) are behind
+swappable dependency *seams* so the dev/test build runs with no external services.
 
 ## Develop
 
