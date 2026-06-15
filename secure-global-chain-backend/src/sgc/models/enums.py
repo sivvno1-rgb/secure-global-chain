@@ -71,6 +71,12 @@ class TaskKind(str, Enum):
     calibration = "Calibration"
 
 
+class Framework(str, Enum):
+    gmp = "GMP"
+    glp = "GLP"
+    gxp = "GxP"
+
+
 def sa_enum(enum_cls: type[Enum]) -> sa.Enum:
     """Build a portable SQLAlchemy Enum that persists the enum *value* strings."""
     return sa.Enum(

@@ -17,6 +17,13 @@ from .manufacturing import (
     Supplier,
     Task,
 )
+from .quality import (
+    Audit,
+    AuditFinding,
+    Capa,
+    ComplianceItem,
+    Deviation,
+)
 from .user import User
 
 __all__ = [
@@ -33,4 +40,9 @@ __all__ = [
     "IpcCheck",
     "Task",
     "Equipment",
+    "Deviation",
+    "Capa",
+    "ComplianceItem",
+    "Audit",
+    "AuditFinding",
 ]

@@ -4,21 +4,22 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict
 
 from ..models.enums import BatchStatus, StatusToken, TaskKind
+from ..pagination import Page
 
-T = TypeVar("T")
-
-
-class Page(BaseModel, Generic[T]):
-    """Collection envelope: ``{ items, total, page }`` (API_SURFACE.md)."""
-
-    items: list[T]
-    total: int
-    page: int
+__all__ = [
+    "Page",
+    "LineRead",
+    "BatchSummary",
+    "BatchStepRead",
+    "IpcCheckRead",
+    "BatchDetail",
+    "TaskRead",
+    "MissionSummary",
+]
 
 
 class LineRead(BaseModel):

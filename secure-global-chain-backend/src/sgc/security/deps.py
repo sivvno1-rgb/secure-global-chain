@@ -54,19 +54,29 @@ def require_role(
     decide, escalate): service tokens are rejected even if they carry the role
     (SECURITY.md §1).
     """
+    return require_any_role(role, human_only=human_only)
+
+
+def require_any_role(
+    *roles: str, human_only: bool = False
+) -> Callable[..., "Principal"]:
+    """Like :func:`require_role` but grants access if the caller has *any* role.
+
+    Used where the handoff allows more than one role (e.g. operators *or* quality
+    may raise deviations).
+    """
+    allowed = frozenset(roles)
 
     async def _dependency(
         principal: Principal = Depends(get_current_principal),
     ) -> Principal:
         if human_only and not principal.is_human:
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Forbidden",
+                status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
             )
-        if not principal.has_role(role):
+        if allowed.isdisjoint(principal.roles):
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Forbidden",
+                status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
             )
         return principal
 

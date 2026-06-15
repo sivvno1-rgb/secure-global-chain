@@ -14,7 +14,23 @@ first — `SECURITY.md`, `DOMAIN_MODEL.md`, `API_SURFACE.md`, `ARCHITECTURE.md`)
 |---|---|
 | **Security core** — identity + audit kernel | ✅ implemented |
 | **manufacturing** — Mission / Operations | ✅ implemented |
-| quality, devices, telemetry, intelligence, research, optimization, agents, executive | ⬜ pending |
+| **quality** — Deviations / CAPA / Audits | ✅ implemented |
+| devices, telemetry, intelligence, research, optimization, agents, executive | ⬜ pending |
+
+### Quality & Compliance context
+
+Models, migration (`0003`), and the API per `DOMAIN_MODEL.md` / `API_SURFACE.md`:
+
+- Tables: `deviations, capas, compliance_items, audits, audit_findings`.
+- Reads: `GET /deviations`, `GET /capas`, `GET /audits`,
+  `GET /audits/{id}/findings`, `GET /compliance/area`.
+- **Human-gated, audited** transitions (role + human actor, audit row in the same
+  transaction, `X-Audit-Event-Id` on the response):
+  - `POST /deviations` — raise (`operator` or `quality`), auto-codes `DEV-####`
+  - `POST /deviations/{code}/escalate` — `quality`
+  - `POST /capas/{code}/effectiveness` — `quality`
+- Deferred: `POST /audit-packs` (needs the Celery + object store + Vault signing
+  step; no table in the domain model yet).
 
 ### Manufacturing context
 

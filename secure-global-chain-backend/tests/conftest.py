@@ -220,3 +220,100 @@ async def mfg(tmp_path, validator):
 
     app.dependency_overrides.clear()
     await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def qual(tmp_path, validator):
+    """Seeded quality DB + an ASGI client. Yields ``(client, sessionmaker, refs)``."""
+    from datetime import datetime, timezone
+
+    from httpx import ASGITransport, AsyncClient
+
+    import sgc.models as models
+    from sgc.db import get_session
+    from sgc.main import app
+    from sgc.models.enums import (
+        BatchStatus,
+        Framework,
+        QualityState,
+        Severity,
+        StatusToken,
+    )
+    from sgc.security.deps import get_jwt_validator
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'qual.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    maker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    now = datetime.now(timezone.utc)
+    refs: dict = {}
+    async with maker() as s:
+        site = models.Site(name="Schaffhausen", cleanroom="CR4")
+        s.add(site)
+        await s.flush()
+        line = models.Line(site_id=site.id, name="Line B", status=StatusToken.pass_)
+        s.add(line)
+        await s.flush()
+        batch = models.Batch(code="TRM-2291", line_id=line.id, status=BatchStatus.hold)
+        s.add(batch)
+        await s.flush()
+
+        dev = models.Deviation(
+            code="DEV-1000",
+            title="Fill weight drift",
+            severity=Severity.major,
+            line_id=line.id,
+            batch_id=batch.id,
+            state=QualityState.review,
+            raised_at=now,
+        )
+        dev_escalated = models.Deviation(
+            code="DEV-1001",
+            title="Environmental excursion",
+            severity=Severity.critical,
+            state=QualityState.escalated,
+            raised_at=now,
+        )
+        capa = models.Capa(
+            code="CAPA-0001", deviation_id=None, status=StatusToken.warn
+        )
+        audit = models.Audit(scope="CR4 annual", framework=Framework.gmp, readiness_pct=82.0)
+        s.add_all([dev, dev_escalated, capa, audit])
+        await s.flush()
+        finding = models.AuditFinding(
+            audit_id=audit.id,
+            framework=Framework.gmp,
+            severity=Severity.minor,
+            status=StatusToken.warn,
+        )
+        ci_gmp = models.ComplianceItem(
+            framework=Framework.gmp, area="CR4", title="Gowning log", state=StatusToken.pass_
+        )
+        ci_glp = models.ComplianceItem(
+            framework=Framework.glp, area="Lab 2", title="Balance calibration", state=StatusToken.warn
+        )
+        s.add_all([finding, ci_gmp, ci_glp])
+        await s.commit()
+        refs.update(
+            deviation="DEV-1000",
+            escalated_deviation="DEV-1001",
+            capa="CAPA-0001",
+            audit_id=audit.id,
+            line_id=line.id,
+        )
+
+    async def _get_session():
+        async with maker() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = _get_session
+    app.dependency_overrides[get_jwt_validator] = lambda: validator
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        yield client, maker, refs
+
+    app.dependency_overrides.clear()
+    await engine.dispose()

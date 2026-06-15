@@ -58,6 +58,10 @@ def test_offline_sql_renders_expected_postgres_ddl():
     for table in ("suppliers", "materials", "sites", "lines", "products",
                   "batches", "batch_steps", "ipc_checks", "tasks", "equipment"):
         assert f"create table {table}" in sql, f"missing CREATE TABLE {table}"
+    # Quality (0003)
+    for table in ("deviations", "capas", "compliance_items", "audits",
+                  "audit_findings"):
+        assert f"create table {table}" in sql, f"missing CREATE TABLE {table}"
     # Enum values are enforced via CHECK constraints (native_enum=False).
     assert "in process" in sql  # BatchStatus value string in a CHECK
     assert "released_by" in sql
