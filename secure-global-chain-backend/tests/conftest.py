@@ -371,6 +371,95 @@ async def telem(tmp_path, validator):
 
 
 @pytest_asyncio.fixture
+async def intel(tmp_path, validator):
+    """Seeded connected graph (in Postgres) + an ASGI client.
+
+    Yields ``(client, sessionmaker, refs)``. The intel endpoints project this
+    Postgres state into an in-memory graph per request.
+    """
+    from datetime import datetime, timezone
+
+    from httpx import ASGITransport, AsyncClient
+
+    import sgc.models as models
+    from sgc.db import get_session
+    from sgc.main import app
+    from sgc.models.enums import (
+        BatchStatus,
+        DeviceState,
+        QualityState,
+        Severity,
+        Sourcing,
+        StatusToken,
+    )
+    from sgc.security.deps import get_jwt_validator
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'intel.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    maker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    now = datetime.now(timezone.utc)
+    refs: dict = {}
+    async with maker() as s:
+        supplier = models.Supplier(
+            name="Guselkumab DS supplier", sourcing=Sourcing.dual,
+            status=StatusToken.pass_,
+        )
+        site = models.Site(name="Schaffhausen", cleanroom="CR4")
+        s.add_all([supplier, site])
+        await s.flush()
+        line = models.Line(site_id=site.id, name="Line B", status=StatusToken.warn)
+        s.add(line)
+        await s.flush()
+        batch = models.Batch(code="TRM-2291", line_id=line.id, status=BatchStatus.inspection)
+        s.add(batch)
+        await s.flush()
+        deviation = models.Deviation(
+            code="DEV-1182", title="Drift", severity=Severity.major,
+            batch_id=batch.id, state=QualityState.escalated,
+        )
+        device = models.Device(
+            serial="DEV-9000", state=DeviceState.quarantined, line_id=line.id,
+        )
+        lane = models.ColdchainLane(code="SG→EU", status=StatusToken.pass_)
+        s.add_all([deviation, device, lane])
+        await s.flush()
+        shipment = models.Shipment(lane_id=lane.id, batch_id=batch.id)
+        s.add(shipment)
+        await s.flush()
+        excursion = models.Excursion(
+            shipment_id=shipment.id, kind="cold-chain", severity=Severity.major,
+            started_at=now,
+        )
+        s.add(excursion)
+        await s.commit()
+        refs.update(
+            batch="TRM-2291",
+            deviation="DEV-1182",
+            device="DEV-9000",
+            lane="SG→EU",
+            line_id=str(line.id),
+            site_id=str(site.id),
+        )
+
+    async def _get_session():
+        async with maker() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = _get_session
+    app.dependency_overrides[get_jwt_validator] = lambda: validator
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        yield client, maker, refs
+
+    app.dependency_overrides.clear()
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture
 async def qual(tmp_path, validator):
     """Seeded quality DB + an ASGI client. Yields ``(client, sessionmaker, refs)``."""
     from datetime import datetime, timezone

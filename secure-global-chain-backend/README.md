@@ -17,7 +17,25 @@ first — `SECURITY.md`, `DOMAIN_MODEL.md`, `API_SURFACE.md`, `ARCHITECTURE.md`)
 | **quality** — Deviations / CAPA / Audits | ✅ implemented |
 | **devices** — NeuroSecure fleet / firmware | ✅ implemented |
 | **telemetry** — cold chain / streams | ✅ implemented |
-| intelligence, research, optimization, agents, executive | ⬜ pending |
+| **intelligence** — Systems Map / graph | ✅ implemented |
+| research, optimization, agents, executive | ⬜ pending |
+
+### Intelligence / Systems Map context (graph)
+
+Graph-backed per `ARCHITECTURE.md` §3 (Postgres = system of record, graph =
+relationship/traversal). **No new Postgres tables.**
+
+- Endpoints: `GET /intel/graph` (filter `supply|mfg|quality|compliance`),
+  `GET /intel/node/{id}` (detail + connection count + signal),
+  `GET /intel/trace/{batchCode}` (chain of custody), `GET /intel/impact/{nodeId}`
+  (blast radius), `GET /intel/signals` (live fail/warn/pass feed).
+- **GraphStore seam** (`sgc/intelligence/graph.py`): `InMemoryGraphStore` backs
+  dev/tests, projected from Postgres by `projector.py` (the same upsert logic the
+  production outbox→Celery→Neo4j sync runs). A `Neo4jGraphStore` Cypher skeleton
+  (`neo4j_store.py`) is the production target — swap via the `get_graph_store`
+  dependency.
+- Deferred: the live Neo4j server + `neo4j` driver, and the outbox table + Celery
+  sync worker (the dev path projects on demand instead).
 
 ### Telemetry & cold-chain context
 
