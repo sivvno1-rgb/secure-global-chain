@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from fastapi import Depends, FastAPI
 
+from .devices import router as devices_router
 from .errors import install_error_handlers
 from .manufacturing import router as manufacturing_router
 from .quality import router as quality_router
@@ -17,6 +18,7 @@ app = FastAPI(title="Secure Global Chain API", version="0.1.0")
 install_error_handlers(app)
 app.include_router(manufacturing_router)
 app.include_router(quality_router)
+app.include_router(devices_router)
 
 
 @app.get("/health")

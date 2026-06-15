@@ -77,6 +77,24 @@ class Framework(str, Enum):
     gxp = "GxP"
 
 
+class DeviceState(str, Enum):
+    provisioned = "Provisioned"
+    online = "Online"
+    transmitting = "Transmitting"
+    offline = "Offline"
+    quarantined = "Quarantined"
+    decommissioned = "Decommissioned"
+
+
+class FirmwareState(str, Enum):
+    draft = "Draft"
+    signed = "Signed"
+    staged = "Staged"
+    rolling = "Rolling"
+    deployed = "Deployed"
+    rolled_back = "Rolled back"
+
+
 def sa_enum(enum_cls: type[Enum]) -> sa.Enum:
     """Build a portable SQLAlchemy Enum that persists the enum *value* strings."""
     return sa.Enum(

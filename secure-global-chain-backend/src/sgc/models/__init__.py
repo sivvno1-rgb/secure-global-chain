@@ -17,6 +17,13 @@ from .manufacturing import (
     Supplier,
     Task,
 )
+from .devices import (
+    Device,
+    DeviceAttestation,
+    FirmwareBuild,
+    FirmwareRollout,
+    ProvisionRequest,
+)
 from .quality import (
     Audit,
     AuditFinding,
@@ -45,4 +52,9 @@ __all__ = [
     "ComplianceItem",
     "Audit",
     "AuditFinding",
+    "FirmwareBuild",
+    "Device",
+    "FirmwareRollout",
+    "DeviceAttestation",
+    "ProvisionRequest",
 ]

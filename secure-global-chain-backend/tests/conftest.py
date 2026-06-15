@@ -223,6 +223,74 @@ async def mfg(tmp_path, validator):
 
 
 @pytest_asyncio.fixture
+async def fleet(tmp_path, validator):
+    """Seeded device fleet DB + an ASGI client. Yields ``(client, sessionmaker, refs)``."""
+    from datetime import datetime, timezone
+
+    from httpx import ASGITransport, AsyncClient
+
+    import sgc.models as models
+    from sgc.db import get_session
+    from sgc.main import app
+    from sgc.models.enums import DeviceState, FirmwareState, StatusToken
+    from sgc.security.deps import get_jwt_validator
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'fleet.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    maker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    now = datetime.now(timezone.utc)
+    refs: dict = {}
+    async with maker() as s:
+        fw_draft = models.FirmwareBuild(
+            version="v4.2.1", state=FirmwareState.draft, artifact_url="s3://fw/v4.2.1"
+        )
+        fw_signed = models.FirmwareBuild(
+            version="v4.1.0", state=FirmwareState.signed, digest="sha256:abc123"
+        )
+        s.add_all([fw_draft, fw_signed])
+        await s.flush()
+
+        dev_online = models.Device(
+            serial="DEV-1182", model="NeuroSecure", state=DeviceState.online,
+            hw_identity_pubkey="dev-pub:seed", last_seen_at=now, firmware_id=fw_signed.id,
+        )
+        s.add(dev_online)
+        await s.flush()
+        att = models.DeviceAttestation(
+            device_id=dev_online.id, firmware_id=fw_signed.id,
+            measured_digest="sha256:abc123", verdict=StatusToken.pass_, at=now,
+        )
+        pending = models.ProvisionRequest(
+            device_serial="DEV-2000", status="pending", at=now
+        )
+        s.add_all([att, pending])
+        await s.commit()
+        refs.update(
+            device="DEV-1182",
+            draft_firmware="v4.2.1",
+            signed_firmware="v4.1.0",
+            pending_request=pending.id,
+        )
+
+    async def _get_session():
+        async with maker() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = _get_session
+    app.dependency_overrides[get_jwt_validator] = lambda: validator
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        yield client, maker, refs
+
+    app.dependency_overrides.clear()
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture
 async def qual(tmp_path, validator):
     """Seeded quality DB + an ASGI client. Yields ``(client, sessionmaker, refs)``."""
     from datetime import datetime, timezone

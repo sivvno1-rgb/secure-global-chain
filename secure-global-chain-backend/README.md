@@ -15,7 +15,28 @@ first — `SECURITY.md`, `DOMAIN_MODEL.md`, `API_SURFACE.md`, `ARCHITECTURE.md`)
 | **Security core** — identity + audit kernel | ✅ implemented |
 | **manufacturing** — Mission / Operations | ✅ implemented |
 | **quality** — Deviations / CAPA / Audits | ✅ implemented |
-| devices, telemetry, intelligence, research, optimization, agents, executive | ⬜ pending |
+| **devices** — NeuroSecure fleet / firmware | ✅ implemented |
+| telemetry, intelligence, research, optimization, agents, executive | ⬜ pending |
+
+### Device Fleet context
+
+Models, migration (`0004`), and the API per `DOMAIN_MODEL.md` / `API_SURFACE.md`:
+
+- Tables: `firmware_builds, devices, firmware_rollouts, device_attestations,
+  provision_requests`.
+- Reads: `GET /devices` (filter `state`/`site`), `GET /devices/{serial}`
+  (+ attestation history), `GET /firmware`, `GET /firmware/rollouts/{id}`.
+- **Human-gated, audited** transitions (role + human actor, audit row in the same
+  transaction, `X-Audit-Event-Id`):
+  - `POST /devices/provision` — request (`operator`/`fleet_admin`)
+  - `POST /devices/provision-requests/{id}/approve` — `fleet_admin` (creates the device)
+  - `POST /devices/{serial}/quarantine` — `fleet_admin`
+  - `POST /firmware/{version}/sign` — `fleet_admin` (Vault-signed)
+  - `POST /firmware/{version}/rollouts` — `fleet_admin` (requires signed firmware)
+- **PKI seam** (`sgc/devices/pki.py`): firmware signing + device identity keys
+  belong in **Vault PKI** (SECURITY.md §2-3). A deterministic `LocalDevSigner` /
+  `LocalDevIdentityProvider` stands in for local/dev/tests; swap by overriding
+  the `get_firmware_signer` / `get_device_identity_provider` dependencies.
 
 ### Quality & Compliance context
 
