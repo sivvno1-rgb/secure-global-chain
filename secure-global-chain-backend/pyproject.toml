@@ -35,6 +35,11 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# Ship the operator frontend (served at GET / and /static/*) inside the wheel;
+# without this `pip install .` drops the non-Python files and StaticFiles fails.
+[tool.setuptools.package-data]
+sgc = ["static/*", "static/**/*"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
