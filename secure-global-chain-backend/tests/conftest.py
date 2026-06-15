@@ -99,3 +99,124 @@ def validator(test_settings, rsa_keypair):
 
     _, public_key = rsa_keypair
     return JwtValidator(settings=test_settings, key_resolver=lambda token: public_key)
+
+
+@pytest_asyncio.fixture
+async def mfg(tmp_path, validator):
+    """Seeded manufacturing DB + an ASGI HTTP client, sharing one event loop.
+
+    Yields ``(client, sessionmaker, refs)``. The app's ``get_session`` and JWT
+    validator are overridden; a file-backed SQLite DB holds the seed data.
+    """
+    from datetime import datetime, timezone
+
+    from httpx import ASGITransport, AsyncClient
+
+    import sgc.models as models
+    from sgc.db import get_session
+    from sgc.main import app
+    from sgc.models.enums import BatchStatus, Sourcing, StatusToken, TaskKind
+    from sgc.security.deps import get_jwt_validator
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'mfg.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    maker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    now = datetime.now(timezone.utc)
+    refs: dict = {}
+    async with maker() as s:
+        seed_user = models.User(
+            keycloak_sub="seed-user",
+            email="seed@sgc.test",
+            display_name="Seed Operator",
+            roles=["operator"],
+        )
+        site = models.Site(name="Schaffhausen", cleanroom="CR4", gmp_status="GMP")
+        product = models.Product(code="TRM", name="Guselkumab", modality="mAb")
+        s.add_all([seed_user, site, product])
+        await s.flush()
+
+        line = models.Line(
+            site_id=site.id,
+            name="Line B",
+            stage="Filling",
+            uptime_pct=98.7,
+            status=StatusToken.pass_,
+        )
+        supplier = models.Supplier(
+            name="Guselkumab DS supplier",
+            material="Guselkumab DS",
+            sourcing=Sourcing.dual,
+            site_country="CH",
+            lead_time_days=30,
+            status=StatusToken.pass_,
+        )
+        s.add_all([line, supplier])
+        await s.flush()
+
+        b1 = models.Batch(
+            code="TRM-2291",
+            product_id=product.id,
+            line_id=line.id,
+            stage="Filling",
+            status=BatchStatus.inspection,
+            yield_pct=98.7,
+            started_at=now,
+        )
+        b2 = models.Batch(
+            code="TRM-2292",
+            product_id=product.id,
+            line_id=line.id,
+            stage="Released",
+            status=BatchStatus.released,
+            yield_pct=97.4,
+            started_at=now,
+        )
+        s.add_all([b1, b2])
+        await s.flush()
+
+        step1 = models.BatchStep(batch_id=b1.id, name="Compounding", sequence=1)
+        step2 = models.BatchStep(
+            batch_id=b1.id,
+            name="Filling",
+            sequence=2,
+            signed_by=seed_user.id,
+            signed_at=now,
+        )
+        ipc = models.IpcCheck(
+            batch_id=b1.id,
+            kind="weight",
+            value=10.1,
+            spec_low=9.5,
+            spec_high=10.5,
+            result=StatusToken.pass_,
+            at=now,
+        )
+        task = models.Task(
+            title="Line clearance", kind=TaskKind.clearance, status=StatusToken.warn
+        )
+        s.add_all([step1, step2, ipc, task])
+        await s.commit()
+        refs.update(
+            batch="TRM-2291",
+            released_batch="TRM-2292",
+            unsigned_step=step1.id,
+            signed_step=step2.id,
+            line_id=line.id,
+        )
+
+    async def _get_session():
+        async with maker() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = _get_session
+    app.dependency_overrides[get_jwt_validator] = lambda: validator
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        yield client, maker, refs
+
+    app.dependency_overrides.clear()
+    await engine.dispose()

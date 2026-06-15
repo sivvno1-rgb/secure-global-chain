@@ -13,7 +13,25 @@ first — `SECURITY.md`, `DOMAIN_MODEL.md`, `API_SURFACE.md`, `ARCHITECTURE.md`)
 | Context | State |
 |---|---|
 | **Security core** — identity + audit kernel | ✅ implemented |
-| manufacturing, quality, devices, telemetry, intelligence, research, optimization, agents, executive | ⬜ pending |
+| **manufacturing** — Mission / Operations | ✅ implemented |
+| quality, devices, telemetry, intelligence, research, optimization, agents, executive | ⬜ pending |
+
+### Manufacturing context
+
+Models, migration (`0002`), and the Mission/Operations API per `DOMAIN_MODEL.md`
+and `API_SURFACE.md` (exact field names / enum strings):
+
+- Tables: `suppliers, materials, sites, lines, products, batches, batch_steps,
+  ipc_checks, tasks, equipment`.
+- Endpoints: `GET /mission/summary`, `GET /lines`, `GET /batches`,
+  `GET /batches/{code}`, `GET /tasks`, `POST /tasks/{id}/complete`, and the
+  human-gated consequential routes below.
+- **Human-gated, audited transitions** (each requires the role + a human actor
+  via `require_role(..., human_only=True)` and writes an `audit_events` row in
+  the same transaction; the response carries `X-Audit-Event-Id`):
+  - `POST /batches/{code}/release` — `qa_release`
+  - `POST /batches/{code}/quarantine` — `quality`
+  - `POST /batches/{code}/steps/{id}/sign` — `operator` (e-signature)
 
 ## Security core (what's here now)
 
