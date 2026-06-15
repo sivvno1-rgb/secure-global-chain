@@ -31,6 +31,13 @@ from .quality import (
     ComplianceItem,
     Deviation,
 )
+from .telemetry import (
+    ColdchainLane,
+    Excursion,
+    Reading,
+    SensorStream,
+    Shipment,
+)
 from .user import User
 
 __all__ = [
@@ -57,4 +64,9 @@ __all__ = [
     "FirmwareRollout",
     "DeviceAttestation",
     "ProvisionRequest",
+    "SensorStream",
+    "Reading",
+    "ColdchainLane",
+    "Shipment",
+    "Excursion",
 ]

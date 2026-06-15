@@ -95,6 +95,18 @@ class FirmwareState(str, Enum):
     rolled_back = "Rolled back"
 
 
+class StreamKind(str, Enum):
+    temp = "temp"
+    particle = "particle"
+    biosignal = "biosignal"
+    humidity = "humidity"
+
+
+class ShipmentState(str, Enum):
+    in_transit = "in_transit"
+    delivered = "delivered"
+
+
 def sa_enum(enum_cls: type[Enum]) -> sa.Enum:
     """Build a portable SQLAlchemy Enum that persists the enum *value* strings."""
     return sa.Enum(

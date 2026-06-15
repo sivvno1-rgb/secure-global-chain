@@ -16,7 +16,26 @@ first — `SECURITY.md`, `DOMAIN_MODEL.md`, `API_SURFACE.md`, `ARCHITECTURE.md`)
 | **manufacturing** — Mission / Operations | ✅ implemented |
 | **quality** — Deviations / CAPA / Audits | ✅ implemented |
 | **devices** — NeuroSecure fleet / firmware | ✅ implemented |
-| telemetry, intelligence, research, optimization, agents, executive | ⬜ pending |
+| **telemetry** — cold chain / streams | ✅ implemented |
+| intelligence, research, optimization, agents, executive | ⬜ pending |
+
+### Telemetry & cold-chain context
+
+Models, migration (`0005`), and the API per `DOMAIN_MODEL.md` / `API_SURFACE.md`:
+
+- Tables: `sensor_streams, readings, coldchain_lanes, shipments, excursions`
+  (`readings` is the high-volume time-series table — Timescale hypertable target).
+- Reads: `GET /streams/{device}/readings` (filter `from`/`to`/`kind`),
+  `GET /coldchain/lanes`, `GET /coldchain/excursions` (filter `lane`/`open`).
+- **Human-gated, audited**: `POST /coldchain/excursions/{id}/disposition` —
+  `quality`.
+- **Signed-ingestion seam** (`sgc/telemetry/ingest.py`): device telemetry is
+  signed with the Vault-issued device identity key; `ingest_signed_reading`
+  verifies it, writes the reading, and **quarantines** the device on signature
+  failure. `LocalDevTelemetryVerifier` stands in for dev/tests; swap via the
+  `get_telemetry_verifier` dependency.
+- Deferred: live `WS /ws/telemetry` (Redis pub/sub fan-out) and the Celery
+  `ingest` worker that drives `ingest_signed_reading`.
 
 ### Device Fleet context
 

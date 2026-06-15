@@ -291,6 +291,86 @@ async def fleet(tmp_path, validator):
 
 
 @pytest_asyncio.fixture
+async def telem(tmp_path, validator):
+    """Seeded telemetry DB + an ASGI client. Yields ``(client, sessionmaker, refs)``."""
+    from datetime import datetime, timedelta, timezone
+
+    from httpx import ASGITransport, AsyncClient
+
+    import sgc.models as models
+    from sgc.db import get_session
+    from sgc.main import app
+    from sgc.models.enums import (
+        DeviceState,
+        Severity,
+        StatusToken,
+        StreamKind,
+    )
+    from sgc.security.deps import get_jwt_validator
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'telem.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    maker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    now = datetime.now(timezone.utc)
+    refs: dict = {}
+    async with maker() as s:
+        device = models.Device(
+            serial="DEV-1182", model="NeuroSecure", state=DeviceState.online,
+            hw_identity_pubkey="dev-pub:telem",
+        )
+        s.add(device)
+        await s.flush()
+        stream = models.SensorStream(
+            device_id=device.id, kind=StreamKind.temp, unit="C",
+            spec_low=2.0, spec_high=8.0,
+        )
+        s.add(stream)
+        await s.flush()
+        for i in range(3):
+            s.add(models.Reading(stream_id=stream.id, ts=now - timedelta(minutes=i), value=5.0 + i))
+
+        lane = models.ColdchainLane(
+            code="SG→EU", origin="SG", destination="EU",
+            spec_low=2.0, spec_high=8.0, status=StatusToken.pass_,
+        )
+        s.add(lane)
+        await s.flush()
+        shipment = models.Shipment(lane_id=lane.id)
+        s.add(shipment)
+        await s.flush()
+        open_exc = models.Excursion(
+            lane_id=lane.id, shipment_id=shipment.id, kind="cold-chain",
+            started_at=now, peak_value=11.2, severity=Severity.major,
+        )
+        s.add(open_exc)
+        await s.commit()
+        refs.update(
+            device="DEV-1182",
+            device_pubkey="dev-pub:telem",
+            stream_id=stream.id,
+            lane_id=lane.id,
+            excursion=open_exc.id,
+        )
+
+    async def _get_session():
+        async with maker() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = _get_session
+    app.dependency_overrides[get_jwt_validator] = lambda: validator
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        yield client, maker, refs
+
+    app.dependency_overrides.clear()
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture
 async def qual(tmp_path, validator):
     """Seeded quality DB + an ASGI client. Yields ``(client, sessionmaker, refs)``."""
     from datetime import datetime, timezone
