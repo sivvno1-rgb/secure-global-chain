@@ -146,6 +146,14 @@ class ScheduleState(str, Enum):
     failed = "failed"
 
 
+class AgentRunStatus(str, Enum):
+    running = "running"
+    awaiting_human = "awaiting_human"
+    accepted = "accepted"
+    rejected = "rejected"
+    failed = "failed"
+
+
 def sa_enum(enum_cls: type[Enum]) -> sa.Enum:
     """Build a portable SQLAlchemy Enum that persists the enum *value* strings."""
     return sa.Enum(

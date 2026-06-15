@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from fastapi import Depends, FastAPI
 
+from .agents import router as agents_router
 from .devices import router as devices_router
 from .errors import install_error_handlers
 from .intelligence import router as intelligence_router
@@ -27,6 +28,7 @@ app.include_router(telemetry_router)
 app.include_router(intelligence_router)
 app.include_router(research_router)
 app.include_router(optimization_router)
+app.include_router(agents_router)
 
 
 @app.get("/health")

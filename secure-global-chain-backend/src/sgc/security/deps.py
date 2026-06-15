@@ -45,6 +45,21 @@ async def get_current_principal(
     return Principal.from_claims(claims)
 
 
+async def require_human(
+    principal: Principal = Depends(get_current_principal),
+) -> Principal:
+    """Authenticated **human** actor (rejects service/agent tokens).
+
+    Used where any human may act but no service identity may — e.g. dispositioning
+    an agent proposal (SECURITY.md §1; AI assists, humans decide).
+    """
+    if not principal.is_human:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
+        )
+    return principal
+
+
 def require_role(
     role: str, *, human_only: bool = False
 ) -> Callable[..., "Principal"]:

@@ -4,6 +4,7 @@ Importing this package registers every table on ``Base.metadata`` so Alembic
 autogenerate and ``create_all`` (tests) both see them.
 """
 
+from .agents import AgentRun
 from .audit import AuditEvent, GENESIS_HASH
 from .manufacturing import (
     Batch,
@@ -85,4 +86,5 @@ __all__ = [
     "Schedule",
     "ScheduleSlot",
     "Scenario",
+    "AgentRun",
 ]

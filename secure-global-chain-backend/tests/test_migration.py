@@ -77,6 +77,8 @@ def test_offline_sql_renders_expected_postgres_ddl():
     # Optimization (0007)
     for table in ("schedules", "schedule_slots", "scenarios"):
         assert f"create table {table}" in sql, f"missing CREATE TABLE {table}"
+    # Agents (0008)
+    assert "create table agent_runs" in sql
     # Enum values are enforced via CHECK constraints (native_enum=False).
     assert "in process" in sql  # BatchStatus value string in a CHECK
     assert "released_by" in sql

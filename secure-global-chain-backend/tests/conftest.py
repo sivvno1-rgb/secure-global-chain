@@ -371,6 +371,49 @@ async def telem(tmp_path, validator):
 
 
 @pytest_asyncio.fixture
+async def agents(tmp_path, validator):
+    """DB seeded with one batch + an ASGI client. Yields ``(client, sessionmaker, refs)``.
+
+    The batch lets a test assert that invoking/accepting an agent proposal never
+    mutates consequential domain state.
+    """
+    from httpx import ASGITransport, AsyncClient
+
+    import sgc.models as models
+    from sgc.db import get_session
+    from sgc.main import app
+    from sgc.models.enums import BatchStatus
+    from sgc.security.deps import get_jwt_validator
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'agents.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    maker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    refs: dict = {}
+    async with maker() as s:
+        batch = models.Batch(code="TRM-2291", status=BatchStatus.inspection)
+        s.add(batch)
+        await s.commit()
+        refs.update(batch="TRM-2291")
+
+    async def _get_session():
+        async with maker() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = _get_session
+    app.dependency_overrides[get_jwt_validator] = lambda: validator
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        yield client, maker, refs
+
+    app.dependency_overrides.clear()
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture
 async def optimization(tmp_path, validator):
     """Empty DB + an ASGI client for optimization. Yields ``(client, sessionmaker)``."""
     from httpx import ASGITransport, AsyncClient

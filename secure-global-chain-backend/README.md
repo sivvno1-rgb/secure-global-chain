@@ -20,7 +20,30 @@ first — `SECURITY.md`, `DOMAIN_MODEL.md`, `API_SURFACE.md`, `ARCHITECTURE.md`)
 | **intelligence** — Systems Map / graph | ✅ implemented |
 | **research** — evidence / validation | ✅ implemented |
 | **optimization** — scheduling / scenario lab | ✅ implemented |
-| agents, executive | ⬜ pending |
+| **agents** — advisory mesh (proposals only) | ✅ implemented |
+| executive | ⬜ pending |
+
+### Agent mesh context
+
+Model (`agent_runs`), migration (`0008`), and the API per `DOMAIN_MODEL.md` /
+`API_SURFACE.md` / `AGENTS_AND_COMPUTE.md`. **The one rule: agents propose,
+humans decide.**
+
+- Endpoints: `GET /agents` (mesh status), `GET /agents/runs` (filter `agent`),
+  `POST /agents/{agent}/invoke` (returns a run with a proposal),
+  `POST /agents/runs/{id}/disposition` (human accept/reject → audit).
+- **Mesh seam** (`sgc/agents/mesh.py`): six catalogued agents (tracer, quality
+  analyst, evidence librarian, scheduler advisor, fleet sentinel, review scribe)
+  over local Ollama models. `StubAgentMesh` produces deterministic, read-only
+  proposals; the LangGraph-over-Ollama orchestrator is the prod target (swap via
+  `get_agent_mesh`).
+- **Hard rule enforced structurally**: an agent's only output is a
+  `proposed_action` with `status=awaiting_human`; there is no code path from the
+  mesh to a domain mutation. Disposition requires a **human** (`require_human` —
+  service tokens rejected) and is audited; **accepting records the decision, it
+  does not execute** — the human still acts via the center's human-gated route.
+  Tests assert invoking/accepting never mutates consequential state.
+- Deferred: the LangGraph/Ollama runtime and `WS /ws/agents`.
 
 ### Optimization & Scenario Lab context
 
