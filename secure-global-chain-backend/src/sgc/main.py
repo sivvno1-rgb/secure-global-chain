@@ -11,6 +11,7 @@ from fastapi import Depends, FastAPI
 from .agents import router as agents_router
 from .devices import router as devices_router
 from .errors import install_error_handlers
+from .executive import router as executive_router
 from .intelligence import router as intelligence_router
 from .manufacturing import router as manufacturing_router
 from .optimization import router as optimization_router
@@ -29,6 +30,7 @@ app.include_router(intelligence_router)
 app.include_router(research_router)
 app.include_router(optimization_router)
 app.include_router(agents_router)
+app.include_router(executive_router)
 
 
 @app.get("/health")

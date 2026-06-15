@@ -371,6 +371,83 @@ async def telem(tmp_path, validator):
 
 
 @pytest_asyncio.fixture
+async def executive(tmp_path, validator):
+    """Seeded multi-context DB + an ASGI client. Yields ``(client, sessionmaker, refs)``."""
+    from datetime import datetime, timezone
+
+    from httpx import ASGITransport, AsyncClient
+
+    import sgc.models as models
+    from sgc.db import get_session
+    from sgc.main import app
+    from sgc.models.enums import (
+        BatchStatus,
+        DeviceState,
+        Framework,
+        QualityState,
+        Severity,
+        Sourcing,
+        StatusToken,
+    )
+    from sgc.security.deps import get_jwt_validator
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'exec.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    maker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    now = datetime.now(timezone.utc)
+    async with maker() as s:
+        product = models.Product(code="TRM", name="Guselkumab")
+        site = models.Site(name="Schaffhausen")
+        supplier_ok = models.Supplier(name="S1", sourcing=Sourcing.dual, status=StatusToken.pass_)
+        supplier_bad = models.Supplier(name="S2", sourcing=Sourcing.single, status=StatusToken.warn)
+        s.add_all([product, site, supplier_ok, supplier_bad])
+        await s.flush()
+        line = models.Line(site_id=site.id, name="Line B", uptime_pct=98.0, status=StatusToken.pass_)
+        s.add(line)
+        await s.flush()
+        # batches: one released (within window), one in process
+        s.add_all([
+            models.Batch(code="TRM-2291", product_id=product.id, line_id=line.id,
+                         status=BatchStatus.released, released_at=now),
+            models.Batch(code="TRM-2292", product_id=product.id, line_id=line.id,
+                         status=BatchStatus.in_process),
+        ])
+        # quality: a critical open deviation + a compliance item
+        s.add_all([
+            models.Deviation(code="DEV-1", title="crit", severity=Severity.critical,
+                             state=QualityState.escalated),
+            models.ComplianceItem(framework=Framework.gmp, area="CR4",
+                                  title="Gowning", state=StatusToken.pass_),
+        ])
+        # devices: one quarantined
+        s.add(models.Device(serial="DEV-9", state=DeviceState.quarantined))
+        # telemetry: one open excursion
+        lane = models.ColdchainLane(code="SG→EU", status=StatusToken.pass_)
+        s.add(lane)
+        await s.flush()
+        s.add(models.Excursion(lane_id=lane.id, kind="cold-chain",
+                               severity=Severity.major, started_at=now))
+        await s.commit()
+
+    async def _get_session():
+        async with maker() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = _get_session
+    app.dependency_overrides[get_jwt_validator] = lambda: validator
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        yield client, maker, {}
+
+    app.dependency_overrides.clear()
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture
 async def agents(tmp_path, validator):
     """DB seeded with one batch + an ASGI client. Yields ``(client, sessionmaker, refs)``.
 

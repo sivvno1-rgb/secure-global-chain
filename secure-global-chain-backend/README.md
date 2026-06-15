@@ -21,7 +21,21 @@ first — `SECURITY.md`, `DOMAIN_MODEL.md`, `API_SURFACE.md`, `ARCHITECTURE.md`)
 | **research** — evidence / validation | ✅ implemented |
 | **optimization** — scheduling / scenario lab | ✅ implemented |
 | **agents** — advisory mesh (proposals only) | ✅ implemented |
-| executive | ⬜ pending |
+| **executive** — read-models (overview/risk/portfolio) | ✅ implemented |
+
+### Executive read-models context
+
+Read-only projections over the other centers per `ARCHITECTURE.md` §2.
+**No new Postgres tables.**
+
+- Endpoints: `GET /executive/overview`, `GET /executive/risk`,
+  `GET /executive/portfolio` — all honor `?range=daily|weekly|monthly|yearly`
+  and are restricted to `executive`/`auditor`.
+- **Read-model seam** (`sgc/executive/readmodel.py`): `LiveReadModelBuilder`
+  computes the projections on demand from manufacturing/quality/devices/telemetry
+  aggregates (KPIs, portfolio counts, risk roll-up with a derived `risk_level`).
+- Deferred: projection tables refreshed by Celery beat per range (the seam swaps
+  to a projection-backed builder via `get_read_model_builder`).
 
 ### Agent mesh context
 
